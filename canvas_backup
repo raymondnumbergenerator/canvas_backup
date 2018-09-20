@@ -36,7 +36,7 @@ def get_file_size(size):
 
 def download_file(api_response, path, cookies, depth):
     if not api_response:
-        return
+        return 0
 
     global TOTAL_SIZE
     global FILE_COUNT
@@ -52,18 +52,22 @@ def download_file(api_response, path, cookies, depth):
         for block in file.iter_content(1024):
             f.write(block)
 
+    return 0
+
 def download_files(api_request, path, cookies, depth=0):
     if not api_request:
-        return
+        return 0
 
     response = json.loads(requests.get(api_request, cookies=cookies).text[9:])
 
     for r in response:
         download_file(r, path, cookies, depth)
 
+    return 0
+
 def download_folder(api_response, path, cookies, depth=0, root=False):
     if not api_response or not 'folders_url' in api_response:
-        return
+        return 0
 
     if not root:
         print("{0:9} {1}{2}/".format('', '|-- ' * depth, api_response['name']))
@@ -72,13 +76,15 @@ def download_folder(api_response, path, cookies, depth=0, root=False):
             os.mkdir(path)
         except:
             print('Failed to create an output directory.')
-            return -1
+            return 1
 
     response = json.loads(requests.get(api_response['folders_url'], cookies=cookies).text[9:])
     download_files(api_response['files_url'], path, cookies, depth + 1)
 
     for r in response:
         download_folder(r, path, cookies, depth + 1)
+
+    return 0
 
 def download_root(name, asset_string, path, cookies):
     print("{0:9} {1}/".format('', name))
@@ -88,7 +94,7 @@ def download_root(name, asset_string, path, cookies):
         os.mkdir(path)
     except:
         print('Failed to create an output directory.')
-        return -1
+        return 1
 
     asset_attr = asset_string.split('_')
     api_req = API_URL + asset_attr[0] + 's/' + asset_attr[1] + '/' + 'folders/root'
@@ -96,13 +102,15 @@ def download_root(name, asset_string, path, cookies):
 
     download_folder(response, path, cookies, root=True)
 
+    return 0
+
 def download(args):
     cookies = http.cookiejar.MozillaCookieJar(args.cookies)
     try:
         cookies.load(ignore_expires=True)
     except:
         print('Failed to load the cookie file.\nMake sure the name of the file was entered correctly and that the first line of the cookie file is \'# HTTP Cookie File\'.')
-        return -1
+        return 1
 
     for c in cookies:
         c.expires = time.time() + (24 * 3600)
@@ -110,17 +118,17 @@ def download(args):
     response = requests.get('https://bcourses.berkeley.edu/files', cookies=cookies)
     if response.url != 'https://bcourses.berkeley.edu/files':
         print('Failed to access your bCourses files.')
-        return -1
+        return 1
 
     path = args.output
     try:
         os.mkdir(path)
     except FileExistsError:
         print('The directory %s already exists.' % path)
-        return -1
+        return 1
     except:
         print('Failed to create an output directory.')
-        return -1
+        return 1
 
     files_page = html.document_fromstring(response.content)
     folders = json.loads(files_page.get_element_by_id('application').findtext('script').split(';')[1][9:])['FILES_CONTEXTS']
@@ -129,16 +137,19 @@ def download(args):
         print('')
     print('%s files downloaded (%s)' % (FILE_COUNT, get_file_size(TOTAL_SIZE)))
 
+    return 0
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Downloads a complete backup of bCourses.')
     parser.usage = """
     You need to supply a cookie.txt from your bCourses session.
     This can be done, for example, by using the cookies.txt extension in Google Chrome.
-    You can then grab your cookies.txt file at https://bcourses.berkeley.edu/files/."""
+    You can then grab your cookies.txt file from https://bcourses.berkeley.edu/files/."""
 
     parser.add_argument('--cookies', type=str, default='cookies.txt', help='Path to the cookiefile.')
     parser.add_argument('--output', type=str, default='downloads', help='Path to the output directory.')
     args = parser.parse_args(argv)
+
     return download(args)
 
 if __name__ == '__main__':
