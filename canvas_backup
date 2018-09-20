@@ -46,10 +46,11 @@ def download_file(api_response, path, cookies, depth):
 
     print('|-- ' * depth + api_response['display_name'] + size)
 
-    file = requests.get(api_response['url'])
+    file = requests.get(api_response['url'], cookies=cookies, stream=True)
     filename = get_valid_filename(api_response['display_name'])
     with open(path + '/' + filename, 'wb') as f:
-        f.write(file.content)
+        for block in file.iter_content(1024):
+            f.write(block)
 
 def download_files(api_request, path, cookies, depth=0):
     if not api_request:
