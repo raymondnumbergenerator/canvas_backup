@@ -47,7 +47,8 @@ def download_file(api_response, path, cookies, depth):
     print('|-- ' * depth + api_response['display_name'] + size)
 
     file = requests.get(api_response['url'])
-    with open(path + '/' + api_response['display_name'], 'wb') as f:
+    filename = get_valid_filename(api_response['display_name'])
+    with open(path + '/' + filename, 'wb') as f:
         f.write(file.content)
 
 def download_files(api_request, path, cookies, depth=0):
