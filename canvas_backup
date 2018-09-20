@@ -1,0 +1,143 @@
+#!/usr/bin/python3
+
+from lxml import html
+
+import argparse
+import http.cookiejar
+import json
+import os
+import re
+import requests
+import string
+import time
+
+API_URL = 'https://bcourses.berkeley.edu/api/v1/'
+FOLDERS_URL = 'https://bcourses.berkeley.edu/files/folder/'
+
+ONE_MB = 2**20
+ONE_KB = 2**10
+
+FILE_COUNT = 0
+TOTAL_SIZE = 0
+
+def get_valid_filename(s):
+    s = str(s).strip().replace(' ', '_')
+    return re.sub(r'(?u)[^-\w.]', '', s)
+
+def get_file_size(size):
+    """
+    Returns the file size in a human readable format. (e.g. 700.79 KB, 19.55 MB)
+    """
+    if size >= ONE_MB:
+        return '{:.2f} MB'.format(size / ONE_MB)
+    elif size >= ONE_KB:
+        return '{:.2f} KB'.format(size / ONE_KB)
+    return '{} {}'.format(size, 'byte(s)')
+
+def download_file(api_response, path, cookies, depth):
+    if not api_response:
+        return
+
+    global TOTAL_SIZE
+    global FILE_COUNT
+    TOTAL_SIZE += api_response['size']
+    FILE_COUNT += 1
+    size = ' [' + get_file_size(api_response['size']) + ']'
+
+    print('|-- ' * depth + api_response['display_name'] + size)
+
+    file = requests.get(api_response['url'])
+    with open(path + '/' + api_response['display_name'], 'wb') as f:
+        f.write(file.content)
+
+def download_files(api_request, path, cookies, depth=0):
+    if not api_request:
+        return
+
+    response = json.loads(requests.get(api_request, cookies=cookies).text[9:])
+
+    for r in response:
+        download_file(r, path, cookies, depth)
+
+def download_folder(api_response, path, cookies, depth=0, root=False):
+    if not api_response or not 'folders_url' in api_response:
+        return
+
+    if not root:
+        print('|-- ' * depth + api_response['name'] + '/')
+        path = path + '/' + get_valid_filename(api_response['name'])
+        try:
+            os.mkdir(path)
+        except:
+            print('Failed to create an output directory.')
+            return -1
+
+    response = json.loads(requests.get(api_response['folders_url'], cookies=cookies).text[9:])
+    download_files(api_response['files_url'], path, cookies, depth + 1)
+
+    for r in response:
+        download_folder(r, path, cookies, depth + 1)
+
+def download_root(name, asset_string, path, cookies):
+    print(name + '/')
+
+    path = path + '/' + get_valid_filename(name)
+    try:
+        os.mkdir(path)
+    except:
+        print('Failed to create an output directory.')
+        return -1
+
+    asset_attr = asset_string.split('_')
+    api_req = API_URL + asset_attr[0] + 's/' + asset_attr[1] + '/' + 'folders/root'
+    response = json.loads(requests.get(api_req, cookies=cookies).text[9:])
+
+    download_folder(response, path, cookies, root=True)
+
+def download(args):
+    cookies = http.cookiejar.MozillaCookieJar(args.cookies)
+    try:
+        cookies.load(ignore_expires=True)
+    except:
+        print('Failed to load the cookie file.\nMake sure the name of the file was entered correctly and that the first line of the cookie file is \'# HTTP Cookie File\'.')
+        return -1
+
+    for c in cookies:
+        c.expires = time.time() + (24 * 3600)
+    
+    response = requests.get('https://bcourses.berkeley.edu/files', cookies=cookies)
+    if response.url != 'https://bcourses.berkeley.edu/files':
+        print('Failed to access your bCourses files.')
+        return -1
+
+    path = args.output
+    try:
+        os.mkdir(path)
+    except FileExistsError:
+        print('The directory %s already exists.' % path)
+        return -1
+    except:
+        print('Failed to create an output directory.')
+        return -1
+
+    files_page = html.document_fromstring(response.content)
+    folders = json.loads(files_page.get_element_by_id('application').findtext('script').split(';')[1][9:])['FILES_CONTEXTS']
+    for f in folders:
+        download_root(f['name'], f['asset_string'], path, cookies)
+        print('')
+    print('%s files downloaded (%s)' % (FILE_COUNT, get_file_size(TOTAL_SIZE)))
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description='Downloads a complete backup of bCourses.')
+    parser.usage = """
+    You need to supply a cookie.txt from your bCourses session.
+    This can be done, for example, by using the cookies.txt extension in Google Chrome.
+    You can then grab your cookies.txt file at https://bcourses.berkeley.edu/files/."""
+
+    parser.add_argument('--cookies', type=str, default='cookies.txt', help='Path to the cookiefile.')
+    parser.add_argument('--output', type=str, default='downloads', help='Path to the output directory.')
+    args = parser.parse_args(argv)
+    return download(args)
+
+if __name__ == '__main__':
+    main()
