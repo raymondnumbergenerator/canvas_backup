@@ -42,9 +42,9 @@ def download_file(api_response, path, cookies, depth):
     global FILE_COUNT
     TOTAL_SIZE += api_response['size']
     FILE_COUNT += 1
-    size = ' [' + get_file_size(api_response['size']) + ']'
+    size = get_file_size(api_response['size'])
 
-    print('|-- ' * depth + api_response['display_name'] + size)
+    print("{0:10}{1}{2}".format(size, '|-- ' * depth, api_response['display_name']))
 
     file = requests.get(api_response['url'], cookies=cookies, stream=True)
     filename = get_valid_filename(api_response['display_name'])
@@ -66,7 +66,7 @@ def download_folder(api_response, path, cookies, depth=0, root=False):
         return
 
     if not root:
-        print('|-- ' * depth + api_response['name'] + '/')
+        print("{0:10}{1}{2}/".format('', '|-- ' * depth, api_response['name']))
         path = path + '/' + get_valid_filename(api_response['name'])
         try:
             os.mkdir(path)
@@ -81,7 +81,7 @@ def download_folder(api_response, path, cookies, depth=0, root=False):
         download_folder(r, path, cookies, depth + 1)
 
 def download_root(name, asset_string, path, cookies):
-    print(name + '/')
+    print("{0:10}{1}/".format('', name))
 
     path = path + '/' + get_valid_filename(name)
     try:
