@@ -95,9 +95,9 @@ def download_assignment(assignment_url, path, cookies, depth):
         download_file(file_response, path, cookies, depth + 1)
     return 0
 
-def download_assignments(course_id, path, cookies, depth=1, root=False):
+def download_assignments(course_id, path, cookies, depth=1):
     """
-    Downloads all assignments for a course.
+    Recursively downloads all assignments for a course given a canvas course id.
     """
     api_request = API_URL + 'courses/' + course_id + '/students/submissions?per_page=200'
     response = json.loads(requests.get(api_request, cookies=cookies).text[9:])
@@ -116,9 +116,9 @@ def download_assignments(course_id, path, cookies, depth=1, root=False):
         download_assignment(assignment_url, path, cookies, depth+1)
     return 0
 
-def download_files(api_request, path, cookies, depth=0):
+def download_files(api_request, path, cookies, depth):
     """
-    Downloads all files in a folder.
+    Downloads all files in a folder given a file list canvas api request.
     """
     if not api_request:
         return 0
@@ -131,7 +131,7 @@ def download_files(api_request, path, cookies, depth=0):
 
 def download_folder(api_response, path, cookies, depth=1, root=False):
     """
-    Downloads a directory under files.
+    Recursively downloads a directory tree given a canvas folder object.
     """
     if not api_response or not 'folders_url' in api_response:
         return 0
@@ -160,6 +160,9 @@ def download_folder(api_response, path, cookies, depth=1, root=False):
     return 0
 
 def download_root(name, asset_string, path, cookies):
+    """
+    Recursively downloads all content for a course.
+    """
     print("{0:9} {1}/".format('', name))
 
     path = path + '/' + get_valid_filename(name)
@@ -176,7 +179,7 @@ def download_root(name, asset_string, path, cookies):
     download_folder(response, path + '/Files', cookies, root=True)
 
     if asset_attr[0] == 'course':
-        download_assignments(asset_attr[1], path + '/Assignments', cookies, root=True)
+        download_assignments(asset_attr[1], path + '/Assignments', cookies)
     return 0
 
 def download(args):
