@@ -12,7 +12,6 @@ import string
 import time
 
 API_URL = 'https://bcourses.berkeley.edu/api/v1/'
-FOLDERS_URL = 'https://bcourses.berkeley.edu/files/folder/'
 
 ONE_MB = 2**20
 ONE_KB = 2**10
@@ -32,29 +31,95 @@ def get_file_size(size):
         return '{:.2f} MB'.format(size / ONE_MB)
     elif size >= ONE_KB:
         return '{:.2f} KB'.format(size / ONE_KB)
-    return '{} {}'.format(size, 'byte(s)')
+    return '{} {}'.format(size, 'bytes')
 
-def download_file(api_response, path, cookies, depth):
-    if not api_response:
-        return 0
-
+def write_file(url, filename, path, size, cookies, depth):
+    """
+    Writes a file to disk.
+    """
     global TOTAL_SIZE
     global FILE_COUNT
-    TOTAL_SIZE += api_response['size']
+    TOTAL_SIZE += size
     FILE_COUNT += 1
-    size = get_file_size(api_response['size'])
+    readable_size = ''
+    if size != 0:
+        readable_size = get_file_size(size)
 
-    print("{0:>9} {1}{2}".format(size, '|-- ' * depth, api_response['display_name']))
+    print("{0:>9} {1}{2}".format(readable_size, '|-- ' * depth, filename))
 
-    file = requests.get(api_response['url'], cookies=cookies, stream=True)
-    filename = get_valid_filename(api_response['display_name'])
+    file = requests.get(url, cookies=cookies, stream=True)
+    filename = get_valid_filename(filename)
     with open(path + '/' + filename, 'wb') as f:
         for block in file.iter_content(1024):
             f.write(block)
 
+def download_file(file, path, cookies, depth):
+    """
+    Downloads a file given a canvas file object.
+    """
+    if not file or not file['url']:
+        return 0
+
+    write_file(file['url'], file['display_name'], path, file['size'], cookies, depth)
+    return 0
+
+def download_modules():
+    # https://bcourses.berkeley.edu/courses/1345007/modules
+    return
+
+def download_assignment(assignment_url, path, cookies, depth):
+    """
+    Downloads all the files on a given assignment.
+    """
+    response = requests.get(assignment_url, cookies=cookies)
+    if not response:
+        return 0
+    response = html.document_fromstring(response.content)
+
+    files = response.find_class('instructure_file_link')
+    if files:
+        name = get_valid_filename(response.find_class('assignment-title')[0].find_class('title')[0].text)
+        print("{0:9} {1}{2}/".format('', '|-- ' * depth, name))
+        try:
+            path = path + '/' + name
+            os.mkdir(path)
+        except:
+            print('Failed to create an output directory.')
+            return 1
+
+    for f in files:
+        file_id = re.search('\/courses\/[0-9]*\/files\/([0-9]*)\/', f.get('href')).group(1)
+        file_api = API_URL + 'files/' +  file_id
+        file_response = json.loads(requests.get(file_api, cookies=cookies).text[9:])
+
+        download_file(file_response, path, cookies, depth + 1)
+    return 0
+
+def download_assignments(course_id, path, cookies, depth=1, root=False):
+    """
+    Downloads all assignments for a course.
+    """
+    api_request = API_URL + 'courses/' + course_id + '/students/submissions?per_page=200'
+    response = json.loads(requests.get(api_request, cookies=cookies).text[9:])
+    if not response:
+        return 0
+
+    print("{0:9} {1}Assignments/".format('', '|-- ' * depth))
+    try:
+        os.mkdir(path)
+    except:
+        print('Failed to create an output directory.')
+        return 1
+
+    for r in response:
+        assignment_url = 'https://bcourses.berkeley.edu/courses/%s/assignments/%s' % (course_id, r['assignment_id'])
+        download_assignment(assignment_url, path, cookies, depth+1)
     return 0
 
 def download_files(api_request, path, cookies, depth=0):
+    """
+    Downloads all files in a folder.
+    """
     if not api_request:
         return 0
 
@@ -62,14 +127,23 @@ def download_files(api_request, path, cookies, depth=0):
 
     for r in response:
         download_file(r, path, cookies, depth)
-
     return 0
 
-def download_folder(api_response, path, cookies, depth=0, root=False):
+def download_folder(api_response, path, cookies, depth=1, root=False):
+    """
+    Downloads a directory under files.
+    """
     if not api_response or not 'folders_url' in api_response:
         return 0
 
-    if not root:
+    if root:
+        print("{0:9} {1}Files/".format('', '|-- ' * depth))
+        try:
+            os.mkdir(path)
+        except:
+            print('Failed to create an output directory.')
+            return 1
+    else:
         print("{0:9} {1}{2}/".format('', '|-- ' * depth, api_response['name']))
         path = path + '/' + get_valid_filename(api_response['name'])
         try:
@@ -83,7 +157,6 @@ def download_folder(api_response, path, cookies, depth=0, root=False):
 
     for r in response:
         download_folder(r, path, cookies, depth + 1)
-
     return 0
 
 def download_root(name, asset_string, path, cookies):
@@ -100,8 +173,10 @@ def download_root(name, asset_string, path, cookies):
     api_req = API_URL + asset_attr[0] + 's/' + asset_attr[1] + '/' + 'folders/root'
     response = json.loads(requests.get(api_req, cookies=cookies).text[9:])
 
-    download_folder(response, path, cookies, root=True)
+    download_folder(response, path + '/Files', cookies, root=True)
 
+    if asset_attr[0] == 'course':
+        download_assignments(asset_attr[1], path + '/Assignments', cookies, root=True)
     return 0
 
 def download(args):
@@ -114,7 +189,7 @@ def download(args):
 
     for c in cookies:
         c.expires = time.time() + (24 * 3600)
-    
+
     response = requests.get('https://bcourses.berkeley.edu/files', cookies=cookies)
     if response.url != 'https://bcourses.berkeley.edu/files':
         print('Failed to access your bCourses files.')
@@ -132,11 +207,26 @@ def download(args):
 
     files_page = html.document_fromstring(response.content)
     folders = json.loads(files_page.get_element_by_id('application').findtext('script').split(';')[1][9:])['FILES_CONTEXTS']
+    courses = {}
     for f in folders:
-        download_root(f['name'], f['asset_string'], path, cookies)
+        courses[f['asset_string']] = f['name']
+
+    # Scrape courses page for missing courses since
+    # the API doesn't return 'inactive' courses.
+    courses_response = requests.get('https://bcourses.berkeley.edu/courses', cookies=cookies)
+    courses_response = html.document_fromstring(courses_response.content).find_class('course-list-table-row')
+    for c in courses_response:
+        a = c.find_class('course-list-course-title-column')[0].find('a')
+        if a is not None:
+            asset_string = 'course_' + a.get('href').split('/')[2]
+            name = a.get('title')
+            if asset_string not in courses:
+                courses[asset_string] = name
+
+    for asset_string, name in courses.items():
+        download_root(name, asset_string, path, cookies)
         print('')
     print('%s files downloaded (%s)' % (FILE_COUNT, get_file_size(TOTAL_SIZE)))
-
     return 0
 
 def main(argv=None):
@@ -144,7 +234,7 @@ def main(argv=None):
     parser.usage = """
     You need to supply a cookie.txt from your bCourses session.
     This can be done, for example, by using the cookies.txt extension in Google Chrome.
-    You can then grab your cookies.txt file from https://bcourses.berkeley.edu/files/."""
+    You can then grab your cookies.txt file from https://bcourses.berkeley.edu/."""
 
     parser.add_argument('--cookies', type=str, default='cookies.txt', help='Path to the cookiefile.')
     parser.add_argument('--output', type=str, default='downloads', help='Path to the output directory.')
