@@ -175,7 +175,9 @@ def download_assignment(assignment_url, path, cookies, depth):
     if not response:
         return 0
 
-    download_page(html.document_fromstring(response.content), path, name, cookies, depth)
+    response = html.document_fromstring(response.content)
+    name = get_valid_filename(response.find_class('assignment-title')[0].find_class('title')[0].text)
+    download_page(response, path, name, cookies, depth)
     return 0
 
 def download_assignments(course_id, path, cookies, depth=1):
@@ -259,10 +261,10 @@ def download_root(name, asset_string, path, cookies):
     api_req = API_URL + asset_attr[0] + 's/' + asset_attr[1] + '/' + 'folders/root?per_page=200'
     response = json.loads(requests.get(api_req, cookies=cookies).text[9:])
 
-    # download_folder(response, path + '/Files', cookies, root=True)
+    download_folder(response, path + '/Files', cookies, root=True)
 
     if asset_attr[0] == 'course':
-        # download_assignments(asset_attr[1], path + '/Assignments', cookies)
+        download_assignments(asset_attr[1], path + '/Assignments', cookies)
         download_modules(asset_attr[1], path + '/Modules', cookies)
     return 0
 
