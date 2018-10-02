@@ -76,6 +76,8 @@ def download_page(html_text, path, name, cookies, depth):
         except:
             print('Failed to create an output directory.')
             return 1
+    else:
+        return 0
 
     for f in files:
         file_id = re.search('\/courses\/[0-9]*\/files\/([0-9]*)\/', f.get('href')).group(1)
