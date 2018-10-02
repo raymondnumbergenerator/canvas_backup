@@ -11,7 +11,8 @@ import requests
 import string
 import time
 
-API_URL = 'https://bcourses.berkeley.edu/api/v1/'
+API_URL = '/api/v1/'
+BASE_URL = ''
 
 ONE_MB = 2**20
 ONE_KB = 2**10
@@ -199,7 +200,7 @@ def download_assignments(course_id, path, cookies, depth=1):
         return 1
 
     for r in response:
-        assignment_url = 'https://bcourses.berkeley.edu/courses/%s/assignments/%s' % (course_id, r['assignment_id'])
+        assignment_url = BASE_URL + '/courses/%s/assignments/%s' % (course_id, r['assignment_id'])
         download_assignment(assignment_url, path, cookies, depth+1)
     return 0
 
@@ -281,9 +282,14 @@ def download(args):
     for c in cookies:
         c.expires = time.time() + (24 * 3600)
 
-    response = requests.get('https://bcourses.berkeley.edu/files', cookies=cookies)
-    if response.url != 'https://bcourses.berkeley.edu/files':
-        print('Failed to access your bCourses files.')
+    global API_URL
+    global BASE_URL
+    BASE_URL = args.url
+    API_URL = args.url + API_URL
+
+    response = requests.get(BASE_URL + '/files', cookies=cookies)
+    if response.url != BASE_URL + '/files':
+        print('Failed to access your canvas files.')
         return 1
 
     path = args.output
@@ -305,7 +311,7 @@ def download(args):
 
     # Scrape courses page for missing courses since
     # the API doesn't return 'inactive' courses.
-    courses_response = requests.get('https://bcourses.berkeley.edu/courses', cookies=cookies)
+    courses_response = requests.get(BASE_URL + '/courses', cookies=cookies)
     courses_response = html.document_fromstring(courses_response.content).find_class('course-list-table-row')
     for c in courses_response:
         a = c.find_class('course-list-course-title-column')[0].find('a')
@@ -327,10 +333,11 @@ def main(argv=None):
     parser.usage = """
     You need to supply a cookie.txt from your bCourses session.
     This can be done, for example, by using the cookies.txt extension in Google Chrome.
-    You can then grab your cookies.txt file from https://bcourses.berkeley.edu/."""
+    You can then grab your cookies.txt file from your canvas page (e.g. https://bcourses.berkeley.edu)."""
 
     parser.add_argument('--cookies', type=str, default='cookies.txt', help='Path to the cookiefile.')
     parser.add_argument('--output', type=str, default='downloads', help='Path to the output directory.')
+    parser.add_argument('--url', type=str, default='https://bcourses.berkeley.edu', help='URL to canvas website.')
     args = parser.parse_args(argv)
 
     return download(args)
