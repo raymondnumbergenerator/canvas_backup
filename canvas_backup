@@ -13,6 +13,7 @@ import time
 
 API_URL = '/api/v1/'
 BASE_URL = ''
+COOKIE_FILE = ''
 
 ONE_MB = 2**20
 ONE_KB = 2**10
@@ -34,7 +35,7 @@ def get_file_size(size):
         return '{:.2f} KB'.format(size / ONE_KB)
     return '{} {}'.format(size, 'bytes')
 
-def write_file(url, filename, path, size, cookies, depth):
+def write_file(url, filename, path, size, depth):
     """
     Writes a file to disk.
     """
@@ -48,23 +49,23 @@ def write_file(url, filename, path, size, cookies, depth):
 
     print("{0:>9} {1}{2}".format(readable_size, '|-- ' * depth, filename))
 
-    file = requests.get(url, cookies=cookies, stream=True)
+    file = requests.get(url, cookies=COOKIE_FILE, stream=True)
     filename = get_valid_filename(filename)
     with open(path + '/' + filename, 'wb') as f:
         for block in file.iter_content(1024):
             f.write(block)
 
-def download_file(file, path, cookies, depth):
+def download_file(file, path, depth):
     """
     Downloads a file given a canvas file object.
     """
     if not file or 'url' not in file or not file['url']:
         return 0
 
-    write_file(file['url'], file['display_name'], path, file['size'], cookies, depth)
+    write_file(file['url'], file['display_name'], path, file['size'], depth)
     return 0
 
-def download_page(html_text, path, name, cookies, depth):
+def download_page(html_text, path, name, depth):
     """
     Scrapes a standard page for all files on it and downloads them.
     """
@@ -83,26 +84,26 @@ def download_page(html_text, path, name, cookies, depth):
     for f in files:
         file_id = re.search('\/courses\/[0-9]*\/files\/([0-9]*)\/', f.get('href')).group(1)
         file_api = API_URL + 'files/' +  file_id
-        file_response = json.loads(requests.get(file_api, cookies=cookies).text[9:])
+        file_response = json.loads(requests.get(file_api, cookies=COOKIE_FILE).text[9:])
 
-        download_file(file_response, path, cookies, depth + 1)
+        download_file(file_response, path, depth + 1)
     return 0
 
-def download_quiz(quiz, path, cookies, depth):
+def download_quiz(quiz, path, depth):
     if not quiz or 'html_url' not in quiz or not quiz['html_url']:
         return 0
 
     name = get_valid_filename(quiz['title'])
     request = quiz['html_url']
-    response = requests.get(request, cookies=cookies)
+    response = requests.get(request, cookies=COOKIE_FILE)
 
     if not response:
         return 0
 
-    download_page(html.document_fromstring(response.content), path, name, cookies, depth)
+    download_page(html.document_fromstring(response.content), path, name, depth)
     return 0
 
-def download_module_body(page, path, cookies, depth):
+def download_module_body(page, path, depth):
     """
     Parses the body text of a module and finds files to download.
     """
@@ -111,10 +112,10 @@ def download_module_body(page, path, cookies, depth):
 
     name = get_valid_filename(page['title'])
 
-    download_page(html.document_fromstring(page['body']), path, name, cookies, depth)
+    download_page(html.document_fromstring(page['body']), path, name, depth)
     return 0
 
-def download_module(module, path, cookies, depth):
+def download_module(module, path, depth):
     """
     Downloads all the files in a given canvas module object.
     """
@@ -124,7 +125,7 @@ def download_module(module, path, cookies, depth):
     api_request = module['items_url'] + '?per_page=200'
     name = get_valid_filename(module['name'])
 
-    response = json.loads(requests.get(api_request, cookies=cookies).text[9:])
+    response = json.loads(requests.get(api_request, cookies=COOKIE_FILE).text[9:])
     if not response:
         return 0
 
@@ -138,24 +139,24 @@ def download_module(module, path, cookies, depth):
 
     for r in response:
         if 'url' in r:
-            object = json.loads(requests.get(r['url'], cookies=cookies).text[9:])
+            object = json.loads(requests.get(r['url'], cookies=COOKIE_FILE).text[9:])
             if 'body' in object:
                 # Object is a page: scrape the page for files
-                download_module_body(object, path, cookies, depth + 1)
+                download_module_body(object, path, depth + 1)
             elif 'quiz_type' in object:
                 # Object is a quiz: scrape the quiz for files
-                download_quiz(object, path, cookies, depth + 1)
+                download_quiz(object, path, depth + 1)
             else:
                 # Object is a file: download the file
-                download_file(object, path, cookies, depth + 1)
+                download_file(object, path, depth + 1)
     return 0
 
-def download_modules(course_id, path, cookies, depth=1):
+def download_modules(course_id, path, depth=1):
     """
     Recursively downloads all the modules in a course.
     """
     api_request = API_URL + 'courses/' + course_id + '/modules?per_page=200'
-    response = json.loads(requests.get(api_request, cookies=cookies).text[9:])
+    response = json.loads(requests.get(api_request, cookies=COOKIE_FILE).text[9:])
     if not response:
         return 0
 
@@ -167,28 +168,28 @@ def download_modules(course_id, path, cookies, depth=1):
         return 1
 
     for r in response:
-        download_module(r, path, cookies, depth + 1)
+        download_module(r, path, depth + 1)
     return 0
 
-def download_assignment(assignment_url, path, cookies, depth):
+def download_assignment(assignment_url, path, depth):
     """
     Downloads all the files on a given assignment.
     """
-    response = requests.get(assignment_url, cookies=cookies)
+    response = requests.get(assignment_url, cookies=COOKIE_FILE)
     if not response:
         return 0
 
     response = html.document_fromstring(response.content)
     name = get_valid_filename(response.find_class('assignment-title')[0].find_class('title')[0].text)
-    download_page(response, path, name, cookies, depth)
+    download_page(response, path, name, depth)
     return 0
 
-def download_assignments(course_id, path, cookies, depth=1):
+def download_assignments(course_id, path, depth=1):
     """
     Recursively downloads all assignments for a course given a canvas course id.
     """
     api_request = API_URL + 'courses/' + course_id + '/students/submissions?per_page=200'
-    response = json.loads(requests.get(api_request, cookies=cookies).text[9:])
+    response = json.loads(requests.get(api_request, cookies=COOKIE_FILE).text[9:])
     if not response:
         return 0
 
@@ -201,23 +202,23 @@ def download_assignments(course_id, path, cookies, depth=1):
 
     for r in response:
         assignment_url = BASE_URL + '/courses/%s/assignments/%s' % (course_id, r['assignment_id'])
-        download_assignment(assignment_url, path, cookies, depth+1)
+        download_assignment(assignment_url, path, depth+1)
     return 0
 
-def download_files(api_request, path, cookies, depth):
+def download_files(api_request, path, depth):
     """
     Downloads all files in a folder given a file list canvas api request.
     """
     if not api_request:
         return 0
 
-    response = json.loads(requests.get(api_request, cookies=cookies).text[9:])
+    response = json.loads(requests.get(api_request, cookies=COOKIE_FILE).text[9:])
 
     for r in response:
-        download_file(r, path, cookies, depth)
+        download_file(r, path, depth)
     return 0
 
-def download_folder(api_response, path, cookies, depth=1, root=False):
+def download_folder(api_response, path, depth=1, root=False):
     """
     Recursively downloads a directory tree given a canvas folder object.
     """
@@ -240,14 +241,14 @@ def download_folder(api_response, path, cookies, depth=1, root=False):
             print('Failed to create an output directory.')
             return 1
 
-    response = json.loads(requests.get(api_response['folders_url'], cookies=cookies).text[9:])
-    download_files(api_response['files_url'], path, cookies, depth + 1)
+    response = json.loads(requests.get(api_response['folders_url'], cookies=COOKIE_FILE).text[9:])
+    download_files(api_response['files_url'], path, depth + 1)
 
     for r in response:
-        download_folder(r, path, cookies, depth + 1)
+        download_folder(r, path, depth + 1)
     return 0
 
-def download_root(name, asset_string, path, cookies):
+def download_root(name, asset_string, path):
     """
     Recursively downloads all content for a course.
     """
@@ -262,24 +263,25 @@ def download_root(name, asset_string, path, cookies):
 
     asset_attr = asset_string.split('_')
     api_req = API_URL + asset_attr[0] + 's/' + asset_attr[1] + '/' + 'folders/root?per_page=200'
-    response = json.loads(requests.get(api_req, cookies=cookies).text[9:])
+    response = json.loads(requests.get(api_req, cookies=COOKIE_FILE).text[9:])
 
-    download_folder(response, path + '/Files', cookies, root=True)
+    download_folder(response, path + '/Files', root=True)
 
     if asset_attr[0] == 'course':
-        download_assignments(asset_attr[1], path + '/Assignments', cookies)
-        download_modules(asset_attr[1], path + '/Modules', cookies)
+        download_assignments(asset_attr[1], path + '/Assignments')
+        download_modules(asset_attr[1], path + '/Modules')
     return 0
 
 def download(args):
-    cookies = http.cookiejar.MozillaCookieJar(args.cookies)
+    global COOKIE_FILE
+    COOKIE_FILE = http.cookiejar.MozillaCookieJar(args.cookies)
     try:
-        cookies.load(ignore_expires=True)
+        COOKIE_FILE.load(ignore_expires=True)
     except:
         print('Failed to load the cookie file.\nMake sure the name of the file was entered correctly and that the first line of the cookie file is \'# HTTP Cookie File\'.')
         return 1
 
-    for c in cookies:
+    for c in COOKIE_FILE:
         c.expires = time.time() + (24 * 3600)
 
     global API_URL
@@ -287,7 +289,7 @@ def download(args):
     BASE_URL = args.url
     API_URL = args.url + API_URL
 
-    response = requests.get(BASE_URL + '/files', cookies=cookies)
+    response = requests.get(BASE_URL + '/files', cookies=COOKIE_FILE)
     if response.url != BASE_URL + '/files':
         print('Failed to access your canvas files.')
         return 1
@@ -311,7 +313,7 @@ def download(args):
 
     # Scrape courses page for missing courses since
     # the API doesn't return 'inactive' courses.
-    courses_response = requests.get(BASE_URL + '/courses', cookies=cookies)
+    courses_response = requests.get(BASE_URL + '/courses', cookies=COOKIE_FILE)
     courses_response = html.document_fromstring(courses_response.content).find_class('course-list-table-row')
     for c in courses_response:
         a = c.find_class('course-list-course-title-column')[0].find('a')
@@ -322,7 +324,7 @@ def download(args):
                 courses[asset_string] = name
 
     for asset_string, name in courses.items():
-        download_root(name, asset_string, path, cookies)
+        download_root(name, asset_string, path)
         print('')
 
     print('%s files downloaded (%s)' % (FILE_COUNT, get_file_size(TOTAL_SIZE)))
