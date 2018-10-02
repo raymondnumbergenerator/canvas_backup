@@ -105,7 +105,7 @@ def download_module_body(page, path, cookies, depth):
     """
     Parses the body text of a module and finds files to download.
     """
-    if not page or not 'body' in page or not page['body']:
+    if not page or 'body' not in page or not page['body']:
         return 0
 
     name = get_valid_filename(page['title'])
@@ -117,7 +117,7 @@ def download_module(module, path, cookies, depth):
     """
     Downloads all the files in a given canvas module object.
     """
-    if not 'items_url' in module or not 'name' in module:
+    if 'items_url' not in module or 'name' not in module:
         return 0
 
     api_request = module['items_url'] + '?per_page=200'
@@ -220,7 +220,7 @@ def download_folder(api_response, path, cookies, depth=1, root=False):
     """
     Recursively downloads a directory tree given a canvas folder object.
     """
-    if not api_response or not 'folders_url' in api_response:
+    if not api_response or 'folders_url' not in api_response:
         return 0
 
     if root:
