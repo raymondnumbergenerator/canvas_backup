@@ -63,22 +63,12 @@ def download_file(file, path, cookies, depth):
     write_file(file['url'], file['display_name'], path, file['size'], cookies, depth)
     return 0
 
-def download_modules():
-    # https://bcourses.berkeley.edu/courses/1345007/modules
-    return
-
-def download_assignment(assignment_url, path, cookies, depth):
+def download_page(html_text, path, name, cookies, depth):
     """
-    Downloads all the files on a given assignment.
+    Scrapes a standard page for all files on it and downloads them.
     """
-    response = requests.get(assignment_url, cookies=cookies)
-    if not response:
-        return 0
-    response = html.document_fromstring(response.content)
-
-    files = response.find_class('instructure_file_link')
+    files = html_text.find_class('instructure_file_link')
     if files:
-        name = get_valid_filename(response.find_class('assignment-title')[0].find_class('title')[0].text)
         print("{0:9} {1}{2}/".format('', '|-- ' * depth, name))
         try:
             path = path + '/' + name
@@ -93,6 +83,99 @@ def download_assignment(assignment_url, path, cookies, depth):
         file_response = json.loads(requests.get(file_api, cookies=cookies).text[9:])
 
         download_file(file_response, path, cookies, depth + 1)
+    return 0
+
+def download_quiz(quiz, path, cookies, depth):
+    if not quiz or 'html_url' not in quiz or not quiz['html_url']:
+        return 0
+
+    name = get_valid_filename(quiz['title'])
+    request = quiz['html_url']
+    response = requests.get(request, cookies=cookies)
+
+    if not response:
+        return 0
+
+    download_page(html.document_fromstring(response.content), path, name, cookies, depth)
+    return 0
+
+def download_module_body(page, path, cookies, depth):
+    """
+    Parses the body text of a module and finds files to download.
+    """
+    if not page or not 'body' in page or not page['body']:
+        return 0
+
+    name = get_valid_filename(page['title'])
+
+    download_page(html.document_fromstring(page['body']), path, name, cookies, depth)
+    return 0
+
+def download_module(module, path, cookies, depth):
+    """
+    Downloads all the files in a given canvas module object.
+    """
+    if not 'items_url' in module or not 'name' in module:
+        return 0
+
+    api_request = module['items_url'] + '?per_page=200'
+    name = get_valid_filename(module['name'])
+
+    response = json.loads(requests.get(api_request, cookies=cookies).text[9:])
+    if not response:
+        return 0
+
+    print("{0:9} {1}{2}/".format('', '|-- ' * depth, name))
+    try:
+        path = path + '/' + name
+        os.mkdir(path)
+    except:
+        print('Failed to create an output directory.')
+        return 1
+
+    for r in response:
+        if 'url' in r:
+            object = json.loads(requests.get(r['url'], cookies=cookies).text[9:])
+            if 'body' in object:
+                # Object is a page: scrape the page for files
+                download_module_body(object, path, cookies, depth + 1)
+            elif 'quiz_type' in object:
+                # Object is a quiz: scrape the quiz for files
+                download_quiz(object, path, cookies, depth + 1)
+            else:
+                # Object is a file: download the file
+                download_file(object, path, cookies, depth + 1)
+    return 0
+
+def download_modules(course_id, path, cookies, depth=1):
+    """
+    Recursively downloads all the modules in a course.
+    """
+    api_request = API_URL + 'courses/' + course_id + '/modules?per_page=200'
+    response = json.loads(requests.get(api_request, cookies=cookies).text[9:])
+    if not response:
+        return 0
+
+    print("{0:9} {1}Modules/".format('', '|-- ' * depth))
+    try:
+        os.mkdir(path)
+    except:
+        print('Failed to create an output directory.')
+        return 1
+
+    for r in response:
+        download_module(r, path, cookies, depth + 1)
+    return 0
+
+def download_assignment(assignment_url, path, cookies, depth):
+    """
+    Downloads all the files on a given assignment.
+    """
+    response = requests.get(assignment_url, cookies=cookies)
+    if not response:
+        return 0
+
+    download_page(html.document_fromstring(response.content), path, name, cookies, depth)
     return 0
 
 def download_assignments(course_id, path, cookies, depth=1):
@@ -173,13 +256,14 @@ def download_root(name, asset_string, path, cookies):
         return 1
 
     asset_attr = asset_string.split('_')
-    api_req = API_URL + asset_attr[0] + 's/' + asset_attr[1] + '/' + 'folders/root'
+    api_req = API_URL + asset_attr[0] + 's/' + asset_attr[1] + '/' + 'folders/root?per_page=200'
     response = json.loads(requests.get(api_req, cookies=cookies).text[9:])
 
-    download_folder(response, path + '/Files', cookies, root=True)
+    # download_folder(response, path + '/Files', cookies, root=True)
 
     if asset_attr[0] == 'course':
-        download_assignments(asset_attr[1], path + '/Assignments', cookies)
+        # download_assignments(asset_attr[1], path + '/Assignments', cookies)
+        download_modules(asset_attr[1], path + '/Modules', cookies)
     return 0
 
 def download(args):
@@ -208,8 +292,9 @@ def download(args):
         print('Failed to create an output directory.')
         return 1
 
-    files_page = html.document_fromstring(response.content)
-    folders = json.loads(files_page.get_element_by_id('application').findtext('script').split(';')[1][9:])['FILES_CONTEXTS']
+    # Scrapes files page for courses, groups, and user's files.
+    # Messier than making API calls for courses and groups but easier.
+    folders = json.loads(html.document_fromstring(response.content).get_element_by_id('application').findtext('script').split(';')[1][9:])['FILES_CONTEXTS']
     courses = {}
     for f in folders:
         courses[f['asset_string']] = f['name']
@@ -229,6 +314,7 @@ def download(args):
     for asset_string, name in courses.items():
         download_root(name, asset_string, path, cookies)
         print('')
+
     print('%s files downloaded (%s)' % (FILE_COUNT, get_file_size(TOTAL_SIZE)))
     return 0
 
