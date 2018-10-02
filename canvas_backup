@@ -83,7 +83,6 @@ def download_page(html_text, path, name, cookies, depth):
         file_id = re.search('\/courses\/[0-9]*\/files\/([0-9]*)\/', f.get('href')).group(1)
         file_api = API_URL + 'files/' +  file_id
         file_response = json.loads(requests.get(file_api, cookies=cookies).text[9:])
-        print(file_api)
 
         download_file(file_response, path, cookies, depth + 1)
     return 0
