@@ -12,8 +12,8 @@ import string
 import time
 
 API_URL = '/api/v1/'
-BASE_URL = ''
-COOKIE_FILE = ''
+BASE_URL = None
+COOKIE_FILE = None
 
 ONE_MB = 2**20
 ONE_KB = 2**10
